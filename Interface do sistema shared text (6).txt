@@ -1,0 +1,586 @@
+import os
+import random
+import asyncio
+import json
+import logging
+from datetime import date
+from collections import deque
+from typing import Dict, List, Optional, Tuple
+
+import discord
+from discord.ext import commands, tasks
+import aiosqlite
+from openai import AsyncOpenAI
+
+# ==================== CONFIGURAÇÕES ====================
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
+if not DISCORD_TOKEN or not CEREBRAS_API_KEY:
+    raise ValueError("Defina DISCORD_TOKEN e CEREBRAS_API_KEY no ambiente.")
+
+CEREBRAS_MODEL = "cerebras-llama3.1-8b"
+CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
+
+DAILY_TOKEN_LIMIT = 10000          # tokens por agente por dia
+DEFAULT_RESPONSE_PROBABILITY = 30  # %
+SPONTANEOUS_INTERVAL = 300         # segundos (5 min)
+MEMORY_SIZE = 100                 # últimas mensagens na memória
+
+# ==================== CLIENTE CEREBRAS ====================
+aclient = AsyncOpenAI(
+    api_key=CEREBRAS_API_KEY,
+    base_url=CEREBRAS_BASE_URL,
+)
+
+# ==================== BOT DISCORD ====================
+intents = discord.Intents.default()
+intents.message_content = True
+intents.messages = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ==================== ESTRUTURAS EM MEMÓRIA ====================
+# agents_by_guild[guild_id][agent_id] = {
+#   'id', 'name', 'avatar_url', 'role_id', 'response_probability',
+#   'system_prompt', 'memory' (deque), 'token_usage_today', 'last_reset_date',
+#   'webhooks': {channel_id: (webhook_id, webhook_token)}
+# }
+agents_by_guild = {}
+db = None  # conexão SQLite
+
+# ==================== FUNÇÕES DE BANCO DE DADOS ====================
+async def init_db():
+    """Cria todas as tabelas necessárias."""
+    conn = await aiosqlite.connect("agents.db")
+    await conn.execute("PRAGMA foreign_keys = ON")
+
+    # Tabela de agentes (agora sem webhooks fixos)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS agents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            avatar_url TEXT,
+            role_id INTEGER,
+            response_probability INTEGER DEFAULT 30,
+            system_prompt TEXT DEFAULT 'Você é um agente de IA conversando em um servidor Discord. Responda de forma natural e concisa.',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            token_usage_today INTEGER DEFAULT 0,
+            last_reset_date TEXT,
+            UNIQUE(guild_id, name)
+        )
+    """)
+
+    # Tabela de webhooks por canal (criados dinamicamente)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS agent_webhooks (
+            agent_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            webhook_id INTEGER NOT NULL,
+            webhook_token TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (agent_id, channel_id),
+            FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+        )
+    """)
+
+    # Log completo de mensagens (servidor inteiro)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER,
+            channel_id INTEGER,
+            message_id INTEGER UNIQUE,
+            author_name TEXT,
+            author_id INTEGER,
+            content TEXT,
+            timestamp TIMESTAMP,
+            is_agent BOOLEAN DEFAULT 0,
+            agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL
+        )
+    """)
+
+    # Memória serializada dos agentes
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS agent_memory (
+            agent_id INTEGER PRIMARY KEY,
+            memory_json TEXT,
+            FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+        )
+    """)
+
+    await conn.commit()
+    return conn
+
+async def load_agents():
+    """Carrega todos os agentes, suas memórias e webhooks do banco."""
+    global agents_by_guild
+    agents_by_guild = {}
+
+    # Carregar agentes
+    cursor = await db.execute("SELECT * FROM agents")
+    rows = await cursor.fetchall()
+    columns = [description[0] for description in cursor.description]
+
+    for row in rows:
+        agent = dict(zip(columns, row))
+        agent_id = agent["id"]
+        guild_id = agent["guild_id"]
+
+        # Inicializar estrutura na memória
+        if guild_id not in agents_by_guild:
+            agents_by_guild[guild_id] = {}
+        agents_by_guild[guild_id][agent_id] = agent
+
+        # Carregar memória
+        mem_cursor = await db.execute(
+            "SELECT memory_json FROM agent_memory WHERE agent_id = ?",
+            (agent_id,)
+        )
+        mem_row = await mem_cursor.fetchone()
+        memory = deque(maxlen=MEMORY_SIZE)
+        if mem_row:
+            mem_list = json.loads(mem_row[0])
+            memory.extend(mem_list)
+        agents_by_guild[guild_id][agent_id]["memory"] = memory
+
+        # Carregar webhooks por canal
+        webhooks_cursor = await db.execute(
+            "SELECT channel_id, webhook_id, webhook_token FROM agent_webhooks WHERE agent_id = ?",
+            (agent_id,)
+        )
+        webhooks = {}
+        async for wrow in webhooks_cursor:
+            webhooks[wrow[0]] = (wrow[1], wrow[2])
+        agents_by_guild[guild_id][agent_id]["webhooks"] = webhooks
+
+        # Resetar uso diário se necessário
+        if agent.get("last_reset_date") != str(date.today()):
+            agents_by_guild[guild_id][agent_id]["token_usage_today"] = 0
+            agents_by_guild[guild_id][agent_id]["last_reset_date"] = str(date.today())
+            await db.execute(
+                "UPDATE agents SET token_usage_today = 0, last_reset_date = ? WHERE id = ?",
+                (str(date.today()), agent_id)
+            )
+            await db.commit()
+
+    logging.info(f"Carregados {sum(len(g) for g in agents_by_guild.values())} agentes.")
+
+async def save_agent_memory(agent_id, guild_id):
+    """Persiste a memória de um agente no banco."""
+    agent = agents_by_guild[guild_id][agent_id]
+    memory_list = list(agent["memory"])
+    memory_json = json.dumps(memory_list)
+    await db.execute(
+        "REPLACE INTO agent_memory (agent_id, memory_json) VALUES (?, ?)",
+        (agent_id, memory_json)
+    )
+    await db.commit()
+
+async def store_message(message, is_agent=False, agent_id=None):
+    """Armazena uma mensagem no log completo do servidor."""
+    guild_id = message.guild.id if message.guild else None
+    await db.execute("""
+        INSERT OR IGNORE INTO messages
+        (guild_id, channel_id, message_id, author_name, author_id, content, timestamp, is_agent, agent_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        guild_id,
+        message.channel.id,
+        message.id,
+        str(message.author),
+        message.author.id,
+        message.content,
+        message.created_at.isoformat(),
+        is_agent,
+        agent_id
+    ))
+    await db.commit()
+
+# ==================== GERENCIAMENTO DE WEBHOOKS ====================
+async def get_agent_webhook(agent, guild, channel):
+    """Obtém ou cria um webhook para o agente no canal especificado."""
+    agent_id = agent["id"]
+    guild_id = guild.id
+    channel_id = channel.id
+
+    # Já existe na memória?
+    if channel_id in agent["webhooks"]:
+        wh_id, wh_token = agent["webhooks"][channel_id]
+        return discord.Webhook.partial(wh_id, wh_token, session=bot.session)
+
+    # Criar novo webhook
+    avatar_bytes = None
+    if agent["avatar_url"]:
+        async with bot.session.get(agent["avatar_url"]) as resp:
+            if resp.status == 200:
+                avatar_bytes = await resp.read()
+
+    webhook = await channel.create_webhook(
+        name=agent["name"],
+        avatar=avatar_bytes,
+        reason=f"Webhook para o agente {agent['name']}"
+    )
+
+    # Armazenar na memória e no banco
+    agent["webhooks"][channel_id] = (webhook.id, webhook.token)
+    await db.execute(
+        "INSERT OR REPLACE INTO agent_webhooks (agent_id, channel_id, webhook_id, webhook_token) VALUES (?, ?, ?, ?)",
+        (agent_id, channel_id, webhook.id, webhook.token)
+    )
+    await db.commit()
+
+    return webhook
+
+async def delete_agent_webhooks(agent_id, guild_id):
+    """Remove todos os webhooks de um agente (usado na remoção)."""
+    agent = agents_by_guild[guild_id][agent_id]
+    for channel_id, (wh_id, wh_token) in agent["webhooks"].items():
+        try:
+            webhook = discord.Webhook.partial(wh_id, wh_token, session=bot.session)
+            await webhook.delete()
+        except:
+            pass
+    agent["webhooks"].clear()
+    await db.execute("DELETE FROM agent_webhooks WHERE agent_id = ?", (agent_id,))
+    await db.commit()
+
+# ==================== FUNÇÕES DOS AGENTES ====================
+async def add_to_agent_memory(agent_id, guild_id, message_dict):
+    """Adiciona uma mensagem à memória de curto prazo do agente."""
+    agent = agents_by_guild[guild_id][agent_id]
+    agent["memory"].append(message_dict)
+    if len(agent["memory"]) % 10 == 0:
+        await save_agent_memory(agent_id, guild_id)
+
+async def send_as_agent(agent, guild, channel, content):
+    """Envia uma mensagem via webhook do agente no canal especificado."""
+    webhook = await get_agent_webhook(agent, guild, channel)
+    try:
+        message = await webhook.send(
+            content=content,
+            wait=True,
+            username=agent["name"],
+            avatar_url=agent["avatar_url"]
+        )
+        # Armazenar no log e na memória do próprio agente
+        await store_message(message, is_agent=True, agent_id=agent["id"])
+        await add_to_agent_memory(agent["id"], guild.id, {
+            "author_name": agent["name"],
+            "author_id": agent["id"],
+            "content": content,
+            "timestamp": message.created_at.isoformat(),
+            "channel_id": channel.id
+        })
+        return message
+    except Exception as e:
+        logging.error(f"Erro ao enviar webhook: {e}")
+        return None
+
+async def generate_response(agent, trigger_message, memory_context):
+    """Chama a API da Cerebras para gerar uma resposta."""
+    if agent["token_usage_today"] >= DAILY_TOKEN_LIMIT:
+        return "[Limite diário de mensagens atingido. Tente novamente amanhã.]"
+
+    system = agent.get("system_prompt", "Você é um agente de IA em um servidor Discord. Responda de forma natural.")
+    user_content = "Histórico recente de conversas (canal e autor):\n"
+    for msg in memory_context[-10:]:  # últimas 10 para não estourar tokens
+        canal = f"#{msg.get('channel_name', 'desconhecido')}" if 'channel_name' in msg else f"canal {msg.get('channel_id', '?')}"
+        user_content += f"[{canal}] {msg['author_name']}: {msg['content']}\n"
+    user_content += f"\nMensagem para responder (canal {trigger_message.channel.name}):\n"
+    user_content += f"{trigger_message.author}: {trigger_message.content}\n"
+    user_content += "Sua resposta:"
+
+    try:
+        response = await aclient.chat.completions.create(
+            model=CEREBRAS_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content}
+            ],
+            temperature=0.7,
+            max_tokens=150,
+        )
+        answer = response.choices[0].message.content
+        tokens_used = response.usage.total_tokens if hasattr(response, 'usage') else 100
+        agent["token_usage_today"] += tokens_used
+        await db.execute(
+            "UPDATE agents SET token_usage_today = ? WHERE id = ?",
+            (agent["token_usage_today"], agent["id"])
+        )
+        await db.commit()
+        return answer
+    except Exception as e:
+        logging.error(f"Erro na API Cerebras: {e}")
+        return "Desculpe, estou com dificuldades técnicas no momento."
+
+async def should_respond(agent):
+    prob = agent.get("response_probability", DEFAULT_RESPONSE_PROBABILITY)
+    return random.randint(1, 100) <= prob
+
+async def handle_message(message):
+    """Processa uma mensagem recebida em qualquer canal."""
+    if message.guild is None:
+        return  # Ignora DMs
+    guild_id = message.guild.id
+    if guild_id not in agents_by_guild or not agents_by_guild[guild_id]:
+        return  # Sem agentes nesta guild
+
+    # Armazena no log global
+    await store_message(message, is_agent=False)
+
+    # Para cada agente da guild, decide se responde
+    tasks_list = []
+    for agent_id, agent in agents_by_guild[guild_id].items():
+        # Não responder a si mesmo (mensagens enviadas por webhook do agente)
+        if message.author.id in [wh[0] for wh in agent["webhooks"].values()]:
+            continue
+
+        if await should_respond(agent):
+            # Adiciona a mensagem à memória do agente
+            await add_to_agent_memory(agent_id, guild_id, {
+                "author_name": str(message.author),
+                "author_id": message.author.id,
+                "content": message.content,
+                "timestamp": message.created_at.isoformat(),
+                "channel_id": message.channel.id,
+                "channel_name": message.channel.name
+            })
+            # Contexto = últimas 100 mensagens da memória
+            memory_context = list(agent["memory"])[-MEMORY_SIZE:]
+            task = asyncio.create_task(
+                respond_and_send(agent, message, memory_context)
+            )
+            tasks_list.append(task)
+
+    if tasks_list:
+        await asyncio.gather(*tasks_list)
+
+async def respond_and_send(agent, trigger_message, memory_context):
+    """Gera e envia a resposta no mesmo canal."""
+    response = await generate_response(agent, trigger_message, memory_context)
+    if response:
+        await send_as_agent(
+            agent,
+            trigger_message.guild,
+            trigger_message.channel,
+            response
+        )
+
+# ==================== MENSAGENS ESPONTÂNEAS ====================
+@tasks.loop(seconds=SPONTANEOUS_INTERVAL)
+async def spontaneous_messages():
+    """Um agente aleatório envia uma mensagem em um canal aleatório."""
+    if not agents_by_guild:
+        return
+
+    # Escolhe uma guild com agentes
+    guild_id = random.choice(list(agents_by_guild.keys()))
+    guild = bot.get_guild(guild_id)
+    if not guild:
+        return
+
+    # Escolhe um agente
+    agent_id = random.choice(list(agents_by_guild[guild_id].keys()))
+    agent = agents_by_guild[guild_id][agent_id]
+
+    # Escolhe um canal de texto onde o bot pode ver e criar webhook
+    channels = [c for c in guild.text_channels if c.permissions_for(guild.me).manage_webhooks]
+    if not channels:
+        return
+    channel = random.choice(channels)
+
+    # Gera conteúdo com a IA
+    prompt = "Gere uma mensagem curta e natural para iniciar uma conversa em um servidor Discord."
+    try:
+        response = await aclient.chat.completions.create(
+            model=CEREBRAS_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.9,
+            max_tokens=50,
+        )
+        content = response.choices[0].message.content
+        tokens_used = response.usage.total_tokens if hasattr(response, 'usage') else 50
+        agent["token_usage_today"] += tokens_used
+        await db.execute(
+            "UPDATE agents SET token_usage_today = ? WHERE id = ?",
+            (agent["token_usage_today"], agent["id"])
+        )
+        await db.commit()
+    except Exception:
+        content = random.choice([
+            "Olá pessoal! 😊",
+            "Alguém aí?",
+            "Que dia lindo!",
+            "Alguma novidade?"
+        ])
+
+    await send_as_agent(agent, guild, channel, content)
+
+# ==================== EVENTOS DO BOT ====================
+@bot.event
+async def on_ready():
+    logging.info(f"Bot logado como {bot.user}")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot and message.webhook_id:
+        # Mensagem de webhook (agente) - identificar qual agente
+        guild_id = message.guild.id if message.guild else None
+        if guild_id and guild_id in agents_by_guild:
+            for agent_id, agent in agents_by_guild[guild_id].items():
+                if message.webhook_id in [wh[0] for wh in agent["webhooks"].values()]:
+                    # Armazenar no log e na memória do próprio agente
+                    await store_message(message, is_agent=True, agent_id=agent_id)
+                    await add_to_agent_memory(agent_id, guild_id, {
+                        "author_name": str(message.author),
+                        "author_id": message.author.id,
+                        "content": message.content,
+                        "timestamp": message.created_at.isoformat(),
+                        "channel_id": message.channel.id,
+                        "channel_name": message.channel.name
+                    })
+                    break
+    # Processa normalmente (outros agentes podem responder)
+    await handle_message(message)
+    await bot.process_commands(message)
+
+# ==================== COMANDOS ====================
+@bot.slash_command(name="criar_agente", description="Cria um novo agente IA no servidor")
+async def criar_agente(
+    ctx,
+    nome: str,
+    avatar_url: str,
+    probabilidade: int = DEFAULT_RESPONSE_PROBABILITY
+):
+    """Cria um agente com nome, avatar e probabilidade."""
+    if ctx.guild is None:
+        await ctx.respond("Este comando só pode ser usado em um servidor.", ephemeral=True)
+        return
+
+    guild_id = ctx.guild.id
+    await ctx.defer()
+
+    # 1. Cria o cargo mencinável
+    try:
+        role = await ctx.guild.create_role(name=nome, mentionable=True)
+    except Exception as e:
+        await ctx.respond(f"Erro ao criar cargo: {e}", ephemeral=True)
+        return
+
+    # 2. Insere no banco
+    try:
+        cursor = await db.execute("""
+            INSERT INTO agents
+            (guild_id, name, avatar_url, role_id, response_probability, last_reset_date)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (guild_id, nome, avatar_url, role.id, probabilidade, str(date.today())))
+        await db.commit()
+        agent_id = cursor.lastrowid
+    except aiosqlite.IntegrityError:
+        await role.delete()
+        await ctx.respond("Já existe um agente com este nome neste servidor.", ephemeral=True)
+        return
+
+    # 3. Inicializa na memória
+    if guild_id not in agents_by_guild:
+        agents_by_guild[guild_id] = {}
+    agents_by_guild[guild_id][agent_id] = {
+        "id": agent_id,
+        "guild_id": guild_id,
+        "name": nome,
+        "avatar_url": avatar_url,
+        "role_id": role.id,
+        "response_probability": probabilidade,
+        "system_prompt": "Você é um agente de IA conversando em um servidor Discord. Responda de forma natural e concisa.",
+        "memory": deque(maxlen=MEMORY_SIZE),
+        "webhooks": {},
+        "token_usage_today": 0,
+        "last_reset_date": str(date.today())
+    }
+
+    await ctx.respond(f"Agente **{nome}** criado! Cargo: {role.mention}")
+
+@bot.slash_command(name="listar_agentes", description="Lista todos os agentes do servidor")
+async def listar_agentes(ctx):
+    if ctx.guild is None:
+        await ctx.respond("Comando inválido em DM.", ephemeral=True)
+        return
+    guild_id = ctx.guild.id
+    if guild_id not in agents_by_guild or not agents_by_guild[guild_id]:
+        await ctx.respond("Nenhum agente cadastrado neste servidor.")
+        return
+
+    lines = []
+    for agent_id, agent in agents_by_guild[guild_id].items():
+        lines.append(
+            f"**{agent['name']}** (ID: {agent_id}) | "
+            f"Prob: {agent['response_probability']}% | "
+            f"Uso hoje: {agent['token_usage_today']}/{DAILY_TOKEN_LIMIT}"
+        )
+    await ctx.respond("\n".join(lines))
+
+@bot.slash_command(name="remover_agente", description="Remove um agente do servidor")
+async def remover_agente(ctx, agent_id: int):
+    if ctx.guild is None:
+        return
+    guild_id = ctx.guild.id
+    if guild_id not in agents_by_guild or agent_id not in agents_by_guild[guild_id]:
+        await ctx.respond("Agente não encontrado neste servidor.")
+        return
+
+    agent = agents_by_guild[guild_id][agent_id]
+
+    # Apagar todos os webhooks
+    await delete_agent_webhooks(agent_id, guild_id)
+
+    # Apagar cargo
+    try:
+        role = ctx.guild.get_role(agent["role_id"])
+        if role:
+            await role.delete()
+    except:
+        pass
+
+    # Remover do banco
+    await db.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+    await db.commit()
+
+    # Remover da memória
+    del agents_by_guild[guild_id][agent_id]
+
+    await ctx.respond(f"Agente **{agent['name']}** removido.")
+
+@bot.slash_command(name="probabilidade", description="Altera a probabilidade de resposta de um agente")
+async def definir_probabilidade(ctx, agent_id: int, probabilidade: int):
+    if ctx.guild is None:
+        return
+    guild_id = ctx.guild.id
+    if not 0 <= probabilidade <= 100:
+        await ctx.respond("A probabilidade deve ser entre 0 e 100.", ephemeral=True)
+        return
+    if guild_id not in agents_by_guild or agent_id not in agents_by_guild[guild_id]:
+        await ctx.respond("Agente não encontrado neste servidor.", ephemeral=True)
+        return
+
+    agents_by_guild[guild_id][agent_id]["response_probability"] = probabilidade
+    await db.execute(
+        "UPDATE agents SET response_probability = ? WHERE id = ?",
+        (probabilidade, agent_id)
+    )
+    await db.commit()
+    await ctx.respond(
+        f"Probabilidade do agente **{agents_by_guild[guild_id][agent_id]['name']}** "
+        f"alterada para {probabilidade}%."
+    )
+
+# ==================== INICIALIZAÇÃO ====================
+@bot.event
+async def setup_hook():
+    global db
+    db = await init_db()
+    await load_agents()
+    bot.session = bot.http._HTTPClient__session
+    spontaneous_messages.start()
+
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)
