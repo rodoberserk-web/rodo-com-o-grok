@@ -1,0 +1,659 @@
+======================================================================================================================================================
+🎮 ARQUIVO PRINCIPAL: FlowingFluids-v3.zip (53.22 KB)
+======================================================================================================================================================
+
+📦 ARQUIVO COMPACTADO: FlowingFluids-v3.zip
+🎯 Profundidade: 0
+📏 Tamanho: 53.22 KB
+────────────────────────────────────────────────────────────
+
+📁 ESTRUTURA DO ARQUIVO:
+──────────────────────────────────────────────────
+      📄 use_item_on_block.json (211 Bytes)
+      📄 biome_add_level.mcfunction (168 Bytes)
+      📄 biome_tick.mcfunction (367 Bytes)
+        📄 disable.mcfunction (239 Bytes)
+        📄 enable.mcfunction (139 Bytes)
+        📄 help.mcfunction (817 Bytes)
+      📄 create_marker_at.mcfunction (4.03 KB)
+      📄 evaporate_marker.mcfunction (77 Bytes)
+      📄 flow_single.mcfunction (1.22 KB)
+      📄 flow_tick.mcfunction (681 Bytes)
+      📄 flow_transfer_down.mcfunction (1.05 KB)
+      📄 flow_transfer_east.mcfunction (1.05 KB)
+      📄 flow_transfer_north.mcfunction (1.05 KB)
+      📄 flow_transfer_south.mcfunction (1.05 KB)
+      📄 flow_transfer_up.mcfunction (1.05 KB)
+      📄 flow_transfer_west.mcfunction (1.05 KB)
+      📄 handle_biome_recharge.mcfunction (441 Bytes)
+      📄 handle_evaporation.mcfunction (377 Bytes)
+      📄 handle_piston_at.mcfunction (486 Bytes)
+        📄 _bucket_collect_impl.mcfunction (1.42 KB)
+        📄 _bucket_place_impl.mcfunction (1.21 KB)
+        📄 bucket_collect.mcfunction (161 Bytes)
+        📄 bucket_place.mcfunction (237 Bytes)
+        📄 fill_bottle.mcfunction (1.12 KB)
+        📄 on_item_used_on_block.mcfunction (543 Bytes)
+      📄 init_storage.mcfunction (848 Bytes)
+      📄 load.mcfunction (598 Bytes)
+      📄 pistons_check.mcfunction (282 Bytes)
+      📄 readme.mcfunction (709 Bytes)
+      📄 reset_to_vanilla.mcfunction (395 Bytes)
+      📄 scan_area.mcfunction (21.17 KB)
+      📄 set_block_visual.mcfunction (2.07 KB)
+      📄 tick.mcfunction (312 Bytes)
+        📄 load.json (46 Bytes)
+        📄 tick.json (46 Bytes)
+📄 pack.mcmeta (186 Bytes)
+
+📄 CONTEÚDO EXTRAÍDO (36 arquivos):
+────────────────────────────────────────────────────────────
+
+📂 data/flowingfluids/advancements/use_item_on_block.json
+📏 Tamanho: 211 Bytes
+────────────────────────────────────────
+{
+  "criteria": {
+    "use_item_on_block": {
+      "trigger": "minecraft:item_used_on_block",
+      "conditions": {}
+    }
+  },
+  "rewards": {
+    "function": "flowingfluids:handlers/on_item_used_on_block"
+  }
+}
+============================================================
+
+📂 data/flowingfluids/functions/biome_add_level.mcfunction
+📏 Tamanho: 168 Bytes
+────────────────────────────────────────
+# flowingfluids:biome_add_level
+execute if score @s ff_vol matches 1..7 run scoreboard players add @s ff_vol 1
+execute as @s run function flowingfluids:set_block_visual
+============================================================
+
+📂 data/flowingfluids/functions/biome_tick.mcfunction
+📏 Tamanho: 367 Bytes
+────────────────────────────────────────
+# flowingfluids:biome_tick
+# Para cada marcador próximo a jogador, aplica evaporação simples e recarga por bioma.
+
+execute as @e[tag=ff_marker] at @s if entity @p[distance=..64] if score @s ff_vol matches 1 run function flowingfluids:handle_evaporation
+execute as @e[tag=ff_marker] at @s if entity @p[distance=..64] run function flowingfluids:handle_biome_recharge
+============================================================
+
+📂 data/flowingfluids/functions/commands/disable.mcfunction
+📏 Tamanho: 239 Bytes
+────────────────────────────────────────
+scoreboard players set #enabled ff_enabled 0
+tellraw @a [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"desativado. Rode /function flowingfluids:reset_to_vanilla para restaurar blocos antes de remover o datapack.","color":"white"}]
+============================================================
+
+📂 data/flowingfluids/functions/commands/enable.mcfunction
+📏 Tamanho: 139 Bytes
+────────────────────────────────────────
+scoreboard players set #enabled ff_enabled 1
+tellraw @a [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"ativado.","color":"white"}]
+============================================================
+
+📂 data/flowingfluids/functions/commands/help.mcfunction
+📏 Tamanho: 817 Bytes
+────────────────────────────────────────
+# flowingfluids:commands/help
+tellraw @s [
+  {"text":"[FlowingFluids v3] ","color":"aqua"},
+  {"text":"Comandos:","color":"white"},
+  {"text":" /function flowingfluids:commands/enable ","color":"green","clickEvent":{"action":"run_command","value":"/function flowingfluids:commands/enable"}},
+  {"text":" | "},
+  {"text":" /function flowingfluids:commands/disable ","color":"red","clickEvent":{"action":"run_command","value":"/function flowingfluids:commands/disable"}},
+  {"text":" | "},
+  {"text":" /function flowingfluids:scan_area ","color":"yellow","clickEvent":{"action":"run_command","value":"/function flowingfluids:scan_area"}},
+  {"text":" | "},
+  {"text":" /function flowingfluids:reset_to_vanilla ","color":"white","clickEvent":{"action":"run_command","value":"/function flowingfluids:reset_to_vanilla"}}
+]
+============================================================
+
+📂 data/flowingfluids/functions/create_marker_at.mcfunction
+📏 Tamanho: 4.03 KB
+────────────────────────────────────────
+# flowingfluids:create_marker_at
+# Executar posicionado no bloco a checar.
+# Se houver água ou lava, summon um marker (armor_stand) e set ff_vol corretamente.
+
+execute unless block ~ ~ ~ minecraft:water run unless block ~ ~ ~ minecraft:lava run return
+
+summon armor_stand ~0.5 ~0.0 ~0.5 {Tags:["ff_marker"],Invisible:1b,Marker:1b,NoGravity:1b,Invulnerable:1b,PersistenceRequired:1b}
+
+# Água mapping
+execute if block ~ ~ ~ minecraft:water[level=0] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=0] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 8
+execute if block ~ ~ ~ minecraft:water[level=1] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=1] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 7
+execute if block ~ ~ ~ minecraft:water[level=2] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=2] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 6
+execute if block ~ ~ ~ minecraft:water[level=3] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=3] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 5
+execute if block ~ ~ ~ minecraft:water[level=4] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=4] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 4
+execute if block ~ ~ ~ minecraft:water[level=5] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=5] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 3
+execute if block ~ ~ ~ minecraft:water[level=6] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=6] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 2
+execute if block ~ ~ ~ minecraft:water[level=7] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_water
+execute if block ~ ~ ~ minecraft:water[level=7] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 1
+
+# Lava mapping
+execute if block ~ ~ ~ minecraft:lava[level=0] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=0] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 8
+execute if block ~ ~ ~ minecraft:lava[level=1] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=1] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 7
+execute if block ~ ~ ~ minecraft:lava[level=2] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=2] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 6
+execute if block ~ ~ ~ minecraft:lava[level=3] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=3] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 5
+execute if block ~ ~ ~ minecraft:lava[level=4] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=4] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 4
+execute if block ~ ~ ~ minecraft:lava[level=5] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=5] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 3
+execute if block ~ ~ ~ minecraft:lava[level=6] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=6] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 2
+execute if block ~ ~ ~ minecraft:lava[level=7] run tag @e[tag=ff_marker,limit=1,sort=nearest] add ff_lava
+execute if block ~ ~ ~ minecraft:lava[level=7] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest] ff_vol 1
+
+function flowingfluids:set_block_visual
+============================================================
+
+📂 data/flowingfluids/functions/evaporate_marker.mcfunction
+📏 Tamanho: 77 Bytes
+────────────────────────────────────────
+# flowingfluids:evaporate_marker
+setblock ~ ~ ~ minecraft:air replace
+kill @s
+============================================================
+
+📂 data/flowingfluids/functions/flow_single.mcfunction
+📏 Tamanho: 1.22 KB
+────────────────────────────────────────
+# flowingfluids:flow_single
+# Executado as/at cada marcador ativo. Faz transferências para 6 direções e atualiza visuais.
+
+execute store result score #transfer ff_transfer run data get storage flowingfluids:config level_transfer_per_tick 1
+execute if score #transfer ff_transfer matches 0 run scoreboard players set #transfer ff_transfer 1
+
+execute positioned ~1 ~ ~ run function flowingfluids:flow_transfer_east
+execute positioned ~-1 ~ ~ run function flowingfluids:flow_transfer_west
+execute positioned ~ ~1 ~ run function flowingfluids:flow_transfer_south
+execute positioned ~ ~-1 ~ ~ run function flowingfluids:flow_transfer_north
+execute positioned ~ ~ ~1 run function flowingfluids:flow_transfer_up
+execute positioned ~ ~ ~-1 run function flowingfluids:flow_transfer_down
+
+function flowingfluids:set_block_visual
+
+execute positioned ~1 ~ ~ run function flowingfluids:set_block_visual
+execute positioned ~-1 ~ ~ run function flowingfluids:set_block_visual
+execute positioned ~ ~1 ~ run function flowingfluids:set_block_visual
+execute positioned ~ ~-1 ~ run function flowingfluids:set_block_visual
+execute positioned ~ ~ ~1 run function flowingfluids:set_block_visual
+execute positioned ~ ~ ~-1 run function flowingfluids:set_block_visual
+============================================================
+
+📂 data/flowingfluids/functions/flow_tick.mcfunction
+📏 Tamanho: 681 Bytes
+────────────────────────────────────────
+# flowingfluids:flow_tick
+# roda por batch - processa marcadores próximos a jogadores
+
+execute store result score #td ff_tmp run data get storage flowingfluids:config tick_delay 1
+execute if score #td ff_tmp matches 0 run scoreboard players set #td ff_tmp 4
+scoreboard players set #batch_counter ff_batch_counter #td
+
+execute store result score #maxd ff_tmp run data get storage flowingfluids:config max_process_distance 1
+execute if score #maxd ff_tmp matches 0 run scoreboard players set #maxd ff_tmp 64
+
+execute as @e[tag=ff_marker] at @s if entity @p[distance=..64] run function flowingfluids:flow_single
+
+function flowingfluids:biome_tick
+function flowingfluids:pistons_check
+============================================================
+
+📂 data/flowingfluids/functions/flow_transfer_down.mcfunction
+📏 Tamanho: 1.05 KB
+────────────────────────────────────────
+# flowingfluids:flow_transfer_down
+execute if entity @s run scoreboard players operation #A ff_tmp = @s ff_vol
+execute if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players operation #B ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol
+scoreboard players operation #D ff_tmp = #A ff_tmp
+scoreboard players operation #D ff_tmp -= #B ff_tmp
+execute if score #D ff_tmp matches 2.. run scoreboard players operation #T ff_tmp = #D ff_tmp
+execute if score #T ff_tmp matches 2.. run scoreboard players remove #T ff_tmp 1
+execute if score #T ff_tmp ff_tmp > #transfer ff_transfer run scoreboard players operation #T ff_tmp = #transfer ff_transfer
+execute if score #T ff_tmp matches 1.. run scoreboard players remove @s ff_vol #T ff_tmp
+execute if entity @e[tag=ff_marker,distance=..0.5] if score #T ff_tmp matches 1.. run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol #T ff_tmp
+scoreboard players set #A ff_tmp 0
+scoreboard players set #B ff_tmp 0
+scoreboard players set #D ff_tmp 0
+scoreboard players set #T ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/flow_transfer_east.mcfunction
+📏 Tamanho: 1.05 KB
+────────────────────────────────────────
+# flowingfluids:flow_transfer_east
+execute if entity @s run scoreboard players operation #A ff_tmp = @s ff_vol
+execute if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players operation #B ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol
+scoreboard players operation #D ff_tmp = #A ff_tmp
+scoreboard players operation #D ff_tmp -= #B ff_tmp
+execute if score #D ff_tmp matches 2.. run scoreboard players operation #T ff_tmp = #D ff_tmp
+execute if score #T ff_tmp matches 2.. run scoreboard players remove #T ff_tmp 1
+execute if score #T ff_tmp ff_tmp > #transfer ff_transfer run scoreboard players operation #T ff_tmp = #transfer ff_transfer
+execute if score #T ff_tmp matches 1.. run scoreboard players remove @s ff_vol #T ff_tmp
+execute if entity @e[tag=ff_marker,distance=..0.5] if score #T ff_tmp matches 1.. run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol #T ff_tmp
+scoreboard players set #A ff_tmp 0
+scoreboard players set #B ff_tmp 0
+scoreboard players set #D ff_tmp 0
+scoreboard players set #T ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/flow_transfer_north.mcfunction
+📏 Tamanho: 1.05 KB
+────────────────────────────────────────
+# flowingfluids:flow_transfer_north
+execute if entity @s run scoreboard players operation #A ff_tmp = @s ff_vol
+execute if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players operation #B ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol
+scoreboard players operation #D ff_tmp = #A ff_tmp
+scoreboard players operation #D ff_tmp -= #B ff_tmp
+execute if score #D ff_tmp matches 2.. run scoreboard players operation #T ff_tmp = #D ff_tmp
+execute if score #T ff_tmp matches 2.. run scoreboard players remove #T ff_tmp 1
+execute if score #T ff_tmp ff_tmp > #transfer ff_transfer run scoreboard players operation #T ff_tmp = #transfer ff_transfer
+execute if score #T ff_tmp matches 1.. run scoreboard players remove @s ff_vol #T ff_tmp
+execute if entity @e[tag=ff_marker,distance=..0.5] if score #T ff_tmp matches 1.. run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol #T ff_tmp
+scoreboard players set #A ff_tmp 0
+scoreboard players set #B ff_tmp 0
+scoreboard players set #D ff_tmp 0
+scoreboard players set #T ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/flow_transfer_south.mcfunction
+📏 Tamanho: 1.05 KB
+────────────────────────────────────────
+# flowingfluids:flow_transfer_south
+execute if entity @s run scoreboard players operation #A ff_tmp = @s ff_vol
+execute if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players operation #B ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol
+scoreboard players operation #D ff_tmp = #A ff_tmp
+scoreboard players operation #D ff_tmp -= #B ff_tmp
+execute if score #D ff_tmp matches 2.. run scoreboard players operation #T ff_tmp = #D ff_tmp
+execute if score #T ff_tmp matches 2.. run scoreboard players remove #T ff_tmp 1
+execute if score #T ff_tmp ff_tmp > #transfer ff_transfer run scoreboard players operation #T ff_tmp = #transfer ff_transfer
+execute if score #T ff_tmp matches 1.. run scoreboard players remove @s ff_vol #T ff_tmp
+execute if entity @e[tag=ff_marker,distance=..0.5] if score #T ff_tmp matches 1.. run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol #T ff_tmp
+scoreboard players set #A ff_tmp 0
+scoreboard players set #B ff_tmp 0
+scoreboard players set #D ff_tmp 0
+scoreboard players set #T ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/flow_transfer_up.mcfunction
+📏 Tamanho: 1.05 KB
+────────────────────────────────────────
+# flowingfluids:flow_transfer_up
+execute if entity @s run scoreboard players operation #A ff_tmp = @s ff_vol
+execute if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players operation #B ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol
+scoreboard players operation #D ff_tmp = #A ff_tmp
+scoreboard players operation #D ff_tmp -= #B ff_tmp
+execute if score #D ff_tmp matches 2.. run scoreboard players operation #T ff_tmp = #D ff_tmp
+execute if score #T ff_tmp matches 2.. run scoreboard players remove #T ff_tmp 1
+execute if score #T ff_tmp ff_tmp > #transfer ff_transfer run scoreboard players operation #T ff_tmp = #transfer ff_transfer
+execute if score #T ff_tmp matches 1.. run scoreboard players remove @s ff_vol #T ff_tmp
+execute if entity @e[tag=ff_marker,distance=..0.5] if score #T ff_tmp matches 1.. run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol #T ff_tmp
+scoreboard players set #A ff_tmp 0
+scoreboard players set #B ff_tmp 0
+scoreboard players set #D ff_tmp 0
+scoreboard players set #T ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/flow_transfer_west.mcfunction
+📏 Tamanho: 1.05 KB
+────────────────────────────────────────
+# flowingfluids:flow_transfer_west
+execute if entity @s run scoreboard players operation #A ff_tmp = @s ff_vol
+execute if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players operation #B ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol
+scoreboard players operation #D ff_tmp = #A ff_tmp
+scoreboard players operation #D ff_tmp -= #B ff_tmp
+execute if score #D ff_tmp matches 2.. run scoreboard players operation #T ff_tmp = #D ff_tmp
+execute if score #T ff_tmp matches 2.. run scoreboard players remove #T ff_tmp 1
+execute if score #T ff_tmp ff_tmp > #transfer ff_transfer run scoreboard players operation #T ff_tmp = #transfer ff_transfer
+execute if score #T ff_tmp matches 1.. run scoreboard players remove @s ff_vol #T ff_tmp
+execute if entity @e[tag=ff_marker,distance=..0.5] if score #T ff_tmp matches 1.. run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol #T ff_tmp
+scoreboard players set #A ff_tmp 0
+scoreboard players set #B ff_tmp 0
+scoreboard players set #D ff_tmp 0
+scoreboard players set #T ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/handle_biome_recharge.mcfunction
+📏 Tamanho: 441 Bytes
+────────────────────────────────────────
+# flowingfluids:handle_biome_recharge
+execute store result score #respawnFlag ff_tmp run data get storage flowingfluids:config water_respawn 1
+execute if score #respawnFlag ff_tmp matches 0 run return
+
+execute if biome ~ ~ minecraft:ocean run function flowingfluids:biome_add_level
+execute if biome ~ ~ minecraft:river run function flowingfluids:biome_add_level
+execute if biome ~ ~ minecraft:swamp run function flowingfluids:biome_add_level
+============================================================
+
+📂 data/flowingfluids/functions/handle_evaporation.mcfunction
+📏 Tamanho: 377 Bytes
+────────────────────────────────────────
+# flowingfluids:handle_evaporation
+execute store result score #evap ff_tmp run data get storage flowingfluids:config evaporation_overworld_ticks 1
+execute if score #evap ff_tmp matches 0 run scoreboard players set #evap ff_tmp 6000
+
+execute store result score #day ff_tmp run time query daytime
+execute if score #day ff_tmp matches 0 run function flowingfluids:evaporate_marker
+============================================================
+
+📂 data/flowingfluids/functions/handle_piston_at.mcfunction
+📏 Tamanho: 486 Bytes
+────────────────────────────────────────
+# flowingfluids:handle_piston_at
+execute positioned ~ ~1 ~ if entity @e[tag=ff_marker,distance=..0.5] run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..0.5] ff_vol 1
+execute positioned ~ ~1 ~ unless entity @e[tag=ff_marker,distance=..0.5] if block ~ ~ ~ minecraft:water run function flowingfluids:create_marker_at
+execute positioned ~ ~1 ~ unless entity @e[tag=ff_marker,distance=..0.5] if block ~ ~ ~ minecraft:lava run function flowingfluids:create_marker_at
+============================================================
+
+📂 data/flowingfluids/functions/handlers/_bucket_collect_impl.mcfunction
+📏 Tamanho: 1.42 KB
+────────────────────────────────────────
+# flowingfluids:handlers/_bucket_collect_impl
+execute store result score #cbmax ff_tmp run data get storage flowingfluids:config consume_bucket_max 1
+execute if score #cbmax ff_tmp matches 0 run scoreboard players set #cbmax ff_tmp 8
+
+execute as @s at @s if entity @e[tag=ff_marker,distance=..3] run scoreboard players operation #M ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..3] ff_vol
+execute unless entity @e[tag=ff_marker,distance=..3] run tellraw @s {"text":"Nenhum fluido gerenciado encontrado neste bloco."} run return
+
+scoreboard players operation #T ff_tmp = #M ff_tmp
+execute if score #T ff_tmp > #cbmax ff_tmp run scoreboard players operation #T ff_tmp = #cbmax ff_tmp
+
+execute as @e[tag=ff_marker,limit=1,sort=nearest,distance=..3] run scoreboard players remove @s ff_vol #T ff_tmp
+
+execute store result storage flowingfluids:temp.amount int 1 run scoreboard players get #T ff_tmp
+
+item replace entity @s weapon.mainhand with minecraft:bucket
+data modify entity @s SelectedItem.tag.ff_vol set from storage flowingfluids:temp amount
+data modify entity @s SelectedItem.tag.ff_type set value "water"
+
+tellraw @s [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"Você coletou água (níveis: "},{"score":{"name":"#T","objective":"ff_tmp"}},{"text":"). O balde agora carrega esse volume (ver SelectedItem.tag.ff_vol)."}]
+
+scoreboard players set #M ff_tmp 0
+scoreboard players set #T ff_tmp 0
+scoreboard players set #cbmax ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/handlers/_bucket_place_impl.mcfunction
+📏 Tamanho: 1.21 KB
+────────────────────────────────────────
+# flowingfluids:handlers/_bucket_place_impl
+data get entity @s SelectedItem.tag.ff_vol
+execute store result storage flowingfluids:temp.amount int 1 run data get entity @s SelectedItem.tag.ff_vol
+execute store result score #amt ff_tmp run data get storage flowingfluids:temp amount 1
+
+execute as @s at @s if entity @e[tag=ff_marker,distance=..3] run scoreboard players add @e[tag=ff_marker,limit=1,sort=nearest,distance=..3] ff_vol #amt ff_tmp
+
+execute unless entity @e[tag=ff_marker,distance=..3] run summon armor_stand ~ ~-1 ~ {Tags:["ff_marker","ff_water"],Invisible:1b,Marker:1b,NoGravity:1b,Invulnerable:1b,PersistenceRequired:1b}
+execute unless entity @e[tag=ff_marker,distance=..3] run scoreboard players set @e[tag=ff_marker,limit=1,sort=nearest,distance=..3] ff_vol #amt ff_tmp
+
+data remove entity @s SelectedItem.tag.ff_vol
+data remove entity @s SelectedItem.tag.ff_type
+
+item replace entity @s weapon.mainhand with minecraft:bucket
+
+tellraw @s [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"Você depositou água (níveis: "},{"score":{"name":"#amt","objective":"ff_tmp"}},{"text":")."}]
+
+scoreboard players set #amt ff_tmp 0
+execute if entity @e[tag=ff_marker,distance=..3] run function flowingfluids:set_block_visual
+============================================================
+
+📂 data/flowingfluids/functions/handlers/bucket_collect.mcfunction
+📏 Tamanho: 161 Bytes
+────────────────────────────────────────
+# flowingfluids:handlers/bucket_collect
+execute if entity @s[nbt={SelectedItem:{id:"minecraft:bucket"}}] run function flowingfluids:handlers/_bucket_collect_impl
+============================================================
+
+📂 data/flowingfluids/functions/handlers/bucket_place.mcfunction
+📏 Tamanho: 237 Bytes
+────────────────────────────────────────
+# flowingfluids:handlers/bucket_place
+execute if entity @s[nbt={SelectedItem:{id:"minecraft:bucket",tag:{ff_vol:1}}}] run function flowingfluids:handlers/_bucket_place_impl
+execute unless data entity @s SelectedItem.tag.ff_vol run return
+============================================================
+
+📂 data/flowingfluids/functions/handlers/fill_bottle.mcfunction
+📏 Tamanho: 1.12 KB
+────────────────────────────────────────
+# flowingfluids:handlers/fill_bottle
+execute unless entity @s[nbt={SelectedItem:{id:"minecraft:glass_bottle"}}] run return
+
+execute store result score #cb ff_tmp run data get storage flowingfluids:config consume_bottle 1
+execute if score #cb ff_tmp matches 0 run scoreboard players set #cb ff_tmp 2
+
+execute as @s at @s unless entity @e[tag=ff_marker,distance=..3] run tellraw @s {"text":"Sem água gerenciada por perto para encher a garrafa."} run return
+
+execute as @s at @s run scoreboard players operation #M ff_tmp = @e[tag=ff_marker,limit=1,sort=nearest,distance=..3] ff_vol
+
+execute if score #M ff_tmp < #cb ff_tmp run tellraw @s {"text":"Água insuficiente para encher a garrafa."} run return
+
+execute as @e[tag=ff_marker,limit=1,sort=nearest,distance=..3] run scoreboard players remove @s ff_vol #cb ff_tmp
+
+clear @s minecraft:glass_bottle 1
+give @s minecraft:potion{Potion:"minecraft:water"} 1
+
+tellraw @s [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"garrafa cheia. (níveis consumidos: "},{"score":{"name":"#cb","objective":"ff_tmp"}},{"text":")"}]
+
+scoreboard players set #M ff_tmp 0
+scoreboard players set #cb ff_tmp 0
+============================================================
+
+📂 data/flowingfluids/functions/handlers/on_item_used_on_block.mcfunction
+📏 Tamanho: 543 Bytes
+────────────────────────────────────────
+# flowingfluids:handlers/on_item_used_on_block
+# Dispatches on item used on block (advancement reward)
+
+execute if data entity @s SelectedItem.tag.ff_vol run function flowingfluids:handlers/bucket_place
+execute unless data entity @s SelectedItem.tag.ff_vol if entity @s[nbt={SelectedItem:{id:"minecraft:bucket"}}] run function flowingfluids:handlers/bucket_collect
+execute if entity @s[nbt={SelectedItem:{id:"minecraft:glass_bottle"}}] run function flowingfluids:handlers/fill_bottle
+
+advancement revoke @s only flowingfluids:use_item_on_block
+============================================================
+
+📂 data/flowingfluids/functions/init_storage.mcfunction
+📏 Tamanho: 848 Bytes
+────────────────────────────────────────
+# flowingfluids:init_storage
+# Cria a configuração padrão em storage (pode ser editada via /data modify storage)
+
+data modify storage flowingfluids:config set value {
+  "flow_distance": 16,
+  "level_transfer_per_tick": 1,
+  "water_respawn": true,
+  "respawn_rate_levels_per_chunk_per_minute": 4,
+  "evaporation_overworld_ticks": 6000,
+  "evaporation_nether_ticks": 200,
+  "scan_radius": 8,
+  "tick_delay": 4,
+  "consume_bottle": 2,
+  "consume_bucket_max": 8,
+  "max_process_distance": 64,
+  "biome_recharge": {"ocean":true,"river":true,"swamp":true},
+  "pistons_as_pumps": true
+}
+
+execute store result score #cfg_tick_delay ff_tmp run data get storage flowingfluids:config tick_delay 1
+execute if score #cfg_tick_delay ff_tmp matches 0 run scoreboard players set #cfg_tick_delay ff_tmp 4
+
+scoreboard players set #batch_counter ff_batch_counter 0
+============================================================
+
+📂 data/flowingfluids/functions/load.mcfunction
+📏 Tamanho: 598 Bytes
+────────────────────────────────────────
+# flowingfluids:load
+# Executado no /reload - cria scoreboards, inicializa storage e dá instruções
+
+scoreboard objectives add ff_vol dummy
+scoreboard objectives add ff_enabled dummy
+scoreboard objectives add ff_batch_counter dummy
+scoreboard objectives add ff_tmp dummy
+scoreboard objectives add ff_transfer dummy
+scoreboard objectives add ff_processdist dummy
+
+scoreboard players set #enabled ff_enabled 1
+
+function flowingfluids:init_storage
+
+tellraw @a [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"carregado. Use /function flowingfluids:commands/help para ajuda.","color":"white"}]
+============================================================
+
+📂 data/flowingfluids/functions/pistons_check.mcfunction
+📏 Tamanho: 282 Bytes
+────────────────────────────────────────
+# flowingfluids:pistons_check
+execute as @a at @s run execute if block ~ ~ ~ minecraft:piston[extended=true] run function flowingfluids:handle_piston_at
+execute as @a at @s run execute if block ~ ~ ~ minecraft:sticky_piston[extended=true] run function flowingfluids:handle_piston_at
+============================================================
+
+📂 data/flowingfluids/functions/readme.mcfunction
+📏 Tamanho: 709 Bytes
+────────────────────────────────────────
+tellraw @a [
+  {"text":"FlowingFluids v3 - README","color":"gold"},
+  {"text":"\nInstalação: coloque a pasta do datapack em world/datapacks/ e rode /reload.","color":"white"},
+  {"text":"\nComandos úteis:\n /function flowingfluids:commands/help - mostra ajuda\n /function flowingfluids:scan_area - converte blocos de água/lava na área em marcadores gerenciados (execute no centro)\n /function flowingfluids:reset_to_vanilla - restaura blocos antes de remover o datapack (recomendado)","color":"white"},
+  {"text":"\nObservações: baldes parciais ganham a tag SelectedItem.tag.ff_vol com a quantidade recolhida; usar esse balde colocará esse volume no target (handler automatizado).","color":"yellow"}
+]
+============================================================
+
+📂 data/flowingfluids/functions/reset_to_vanilla.mcfunction
+📏 Tamanho: 395 Bytes
+────────────────────────────────────────
+# flowingfluids:reset_to_vanilla
+execute as @e[tag=ff_marker] at @s if entity @s[tag=ff_water] run setblock ~ ~ ~ minecraft:water replace
+execute as @e[tag=ff_marker] at @s if entity @s[tag=ff_lava] run setblock ~ ~ ~ minecraft:lava replace
+
+kill @e[tag=ff_marker]
+
+tellraw @a [{"text":"[FlowingFluids v3] ","color":"aqua"},{"text":"Reset concluído: marcadores convertidos em blocos vanilla."}]
+============================================================
+
+📂 data/flowingfluids/functions/scan_area.mcfunction
+📏 Tamanho: 21.17 KB
+────────────────────────────────────────
+# flowingfluids:scan_area\n# Execute posicionado no centro da área desejada\n\nexecute positioned ~-8 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-8 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-7 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-7 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-6 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-6 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-5 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-5 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-4 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-4 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-3 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-3 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-2 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+6 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+7 run function flowingfluids:create_marker_at\nexecute positioned ~-2 ~ ~+8 run function flowingfluids:create_marker_at\n\nexecute positioned ~-1 ~ ~-8 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-7 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-6 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-5 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-4 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-3 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-2 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~-1 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+0 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+1 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+2 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+3 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+4 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+5 run function flowingfluids:create_marker_at\nexecute positioned ~-1 ~ ~+6 run function flowingfluids:create_ma
+
+[... CONTEÚDO TRUNCADO - ARQUIVO MUITO GRANDE ...]
+
+============================================================
+
+📂 data/flowingfluids/functions/set_block_visual.mcfunction
+📏 Tamanho: 2.07 KB
+────────────────────────────────────────
+# flowingfluids:set_block_visual
+# Executar posicionado no marcador (use: execute as @e[tag=ff_marker] at @s run function ...)
+
+execute store result score #V ff_tmp run scoreboard players get @s ff_vol
+
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 8 run setblock ~ ~ ~ minecraft:water replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 7 run setblock ~ ~ ~ minecraft:water[level=1] replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 6 run setblock ~ ~ ~ minecraft:water[level=2] replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 5 run setblock ~ ~ ~ minecraft:water[level=3] replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 4 run setblock ~ ~ ~ minecraft:water[level=4] replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 3 run setblock ~ ~ ~ minecraft:water[level=5] replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 2 run setblock ~ ~ ~ minecraft:water[level=6] replace
+execute as @s if entity @s[tag=ff_water] if score #V ff_tmp matches 1 run setblock ~ ~ ~ minecraft:water[level=7] replace
+
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 8 run setblock ~ ~ ~ minecraft:lava replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 7 run setblock ~ ~ ~ minecraft:lava[level=1] replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 6 run setblock ~ ~ ~ minecraft:lava[level=2] replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 5 run setblock ~ ~ ~ minecraft:lava[level=3] replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 4 run setblock ~ ~ ~ minecraft:lava[level=4] replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 3 run setblock ~ ~ ~ minecraft:lava[level=5] replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 2 run setblock ~ ~ ~ minecraft:lava[level=6] replace
+execute as @s if entity @s[tag=ff_lava] if score #V ff_tmp matches 1 run setblock ~ ~ ~ minecraft:lava[level=7] replace
+============================================================
+
+📂 data/flowingfluids/functions/tick.mcfunction
+📏 Tamanho: 312 Bytes
+────────────────────────────────────────
+# flowingfluids:tick
+# Chamado todo tick por tag. Implementa gate por ff_enabled e tick_delay.
+
+execute if score #enabled ff_enabled matches 0 run return
+
+scoreboard players remove #batch_counter ff_batch_counter 1
+execute if score #batch_counter ff_batch_counter matches ..0 run function flowingfluids:flow_tick
+============================================================
+
+📂 data/flowingfluids/tags/functions/load.json
+📏 Tamanho: 46 Bytes
+────────────────────────────────────────
+{
+  "values": [
+    "flowingfluids:load"
+  ]
+}
+============================================================
+
+📂 data/flowingfluids/tags/functions/tick.json
+📏 Tamanho: 46 Bytes
+────────────────────────────────────────
+{
+  "values": [
+    "flowingfluids:tick"
+  ]
+}
+============================================================
+
+📂 pack.mcmeta
+📏 Tamanho: 186 Bytes
+────────────────────────────────────────
+{
+  "pack": {
+    "pack_format": 16,
+    "description": "Flowing Fluids v3 — finite fluids datapack (water/lava) — realistic volumes, bucket NBT, pistons pumps, biome recharge"
+  }
+}
+============================================================
+
+📊 ESTATÍSTICAS DESTE NIVEL:
+──────────────────────────────────────────────────
+Total de arquivos: 36
+Arquivos extraídos: 36
+Arquivos ZIP/JAR: 1
+Profundidade atual: 0
+Tamanho total: 99.96 KB
+
+
+
+======================================================================================================================================================
+🎯 RESUMO DA EXTRAÇÃO RECURSIVA COMPLETA
+======================================================================================================================================================
+
+📦 Arquivos principais processados: 1
+📄 Arquivos encontrados (total): 36
+📝 Arquivos extraídos (conteúdo): 36
+📦 Arquivos ZIP/JAR abertos: 1
+🎯 Profundidade máxima alcançada: 0
+⚡ Funções (.mcfunction): 32
+📊 Arquivos JSON: 3
+🔧 Configurações: 0
+💾 Tamanho total processado: 99.96 KB
+
+📦 ARQUIVOS ZIP/JAR ENCONTRADOS RECURSIVAMENTE:
+────────────────────────────────────────────────────────────────────────────────
+  └── 📦 FlowingFluids-v3.zip (Profundidade: 0)
+
+🕐 Data: 21/02/2026, 13:46:53
+⚙️ Configurações: Profundidade máxima 20, Tamanho máximo 50MB
