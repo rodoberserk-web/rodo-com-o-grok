@@ -1,0 +1,306 @@
+========================================================================================================================
+🎮 ARQUIVO: [1.21.2--1.21.6]mob_variations (2).zip (5.29 KB)
+========================================================================================================================
+
+📦 ZIP: [1.21.2--1.21.6]mob_variations (2).zip
+📋 Versão: Pack Format 80
+📝 Descrição: Mobs Spawn with Randomly Tweaked Stats
+────────────────────────────────────────────────────────────────────────────────
+
+📁 ESTRUTURA DE ARQUIVOS
+────────────────────────────────────────────────────────────────────────────────
+
+├── 📁 data
+│   │   ├── 📁 conures
+│   │   │   │   ├── 📁 function
+│   │   │   │   │       └── 📁 mobstats
+│   │   │   │   │           │   ├── 📄 load.mcfunction (1.4 KB) <span class="content-type">MCFUNCTION</span>
+│   │   │   │   │           │   ├── 📁 macro
+│   │   │   │   │           │   │   │   ├── 📄 modify_stat.mcfunction (103 Bytes) <span class="content-type">MCFUNCTION</span>
+│   │   │   │   │           │   │   │   ├── 📄 roll_stat.mcfunction (191 Bytes) <span class="content-type">MCFUNCTION</span>
+│   │   │   │   │           │   │       └── 📄 roll_stat_init.mcfunction (391 Bytes) <span class="content-type">MCFUNCTION</span>
+│   │   │   │   │           │   ├── 📄 set_stats.mcfunction (913 Bytes) <span class="content-type">MCFUNCTION</span>
+│   │   │   │   │               └── 📄 tick.1s.mcfunction (165 Bytes) <span class="content-type">MCFUNCTION</span>
+│   │   │       └── 📁 tags
+│   │   │               └── 📁 entity_type
+│   │   │                       └── 📁 mobstats
+│   │   │                           │   ├── 📄 affected_mobs.json (261 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   ├── 📁 can_edit_stat
+│   │   │                           │   │   │   ├── 📄 attack_damage.json (87 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   │   │   ├── 📄 jump_strength.json (87 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   │   │   ├── 📄 max_health.json (164 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   │   │   ├── 📄 movement_speed.json (87 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   │       └── 📄 scale.json (164 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   ├── 📄 melee_land.json (538 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   ├── 📄 melee_nonland.json (105 Bytes) <span class="content-type">JSON</span>
+│   │   │                           │   ├── 📄 nonmelee_land.json (300 Bytes) <span class="content-type">JSON</span>
+│   │   │                               └── 📄 nonmelee_nonland.json (287 Bytes) <span class="content-type">JSON</span>
+│       └── 📁 minecraft
+│               └── 📁 tags
+│                       └── 📁 function
+│                               └── 📄 load.json (43 Bytes) <span class="content-type">JSON</span>
+└── 📄 pack.mcmeta (126 Bytes) <span class="content-type">MCMETA</span>
+
+📄 CONTEÚDO EXTRAÍDO (18 arquivos)
+────────────────────────────────────────────────────────────────────────────────
+
+📂 ARQUIVO: data/conures/function/mobstats/load.mcfunction
+📏 Tamanho: 1.4 KB
+📅 Data: 02/09/2024, 10:11:28
+────────────────────────────────────────────────────────────
+scoreboard objectives add mobstats.range dummy
+execute unless score attack_damage.min mobstats.range matches ..2147483647 run scoreboard players set attack_damage.min mobstats.range -20
+execute unless score attack_damage.max mobstats.range matches ..2147483647 run scoreboard players set attack_damage.max mobstats.range 20
+execute unless score jump_strength.min mobstats.range matches ..2147483647 run scoreboard players set jump_strength.min mobstats.range -8
+execute unless score jump_strength.max mobstats.range matches ..2147483647 run scoreboard players set jump_strength.max mobstats.range 8
+execute unless score max_health.min mobstats.range matches ..2147483647 run scoreboard players set max_health.min mobstats.range -10
+execute unless score max_health.max mobstats.range matches ..2147483647 run scoreboard players set max_health.max mobstats.range 10
+execute unless score movement_speed.min mobstats.range matches ..2147483647 run scoreboard players set movement_speed.min mobstats.range -12
+execute unless score movement_speed.max mobstats.range matches ..2147483647 run scoreboard players set movement_speed.max mobstats.range 12
+execute unless score scale.min mobstats.range matches ..2147483647 run scoreboard players set scale.min mobstats.range -15
+execute unless score scale.max mobstats.range matches ..2147483647 run scoreboard players set scale.max mobstats.range 15
+
+function conures:mobstats/tick.1s
+================================================================================
+
+📂 ARQUIVO: data/conures/function/mobstats/macro/modify_stat.mcfunction
+📏 Tamanho: 103 Bytes
+📅 Data: 23/10/2024, 13:42:00
+────────────────────────────────────────────────────────────
+$attribute @s minecraft:$(Stat) modifier add conures:mobstats.random_stat $(Value) add_multiplied_total
+================================================================================
+
+📂 ARQUIVO: data/conures/function/mobstats/macro/roll_stat.mcfunction
+📏 Tamanho: 191 Bytes
+📅 Data: 11/08/2024, 08:03:28
+────────────────────────────────────────────────────────────
+$execute store result storage conures:mobstats Macro.Value double 0.01 run random value $(RollMin)..$(RollMax)
+function conures:mobstats/macro/modify_stat with storage conures:mobstats Macro
+================================================================================
+
+📂 ARQUIVO: data/conures/function/mobstats/macro/roll_stat_init.mcfunction
+📏 Tamanho: 391 Bytes
+📅 Data: 12/08/2024, 05:17:54
+────────────────────────────────────────────────────────────
+$data modify storage conures:mobstats Macro.Stat set value "$(Stat)"
+$execute store result storage conures:mobstats Macro.RollMin int 1 run scoreboard players get $(Stat).min mobstats.range
+$execute store result storage conures:mobstats Macro.RollMax int 1 run scoreboard players get $(Stat).max mobstats.range
+function conures:mobstats/macro/roll_stat with storage conures:mobstats Macro
+================================================================================
+
+📂 ARQUIVO: data/conures/function/mobstats/set_stats.mcfunction
+📏 Tamanho: 913 Bytes
+📅 Data: 23/10/2024, 13:42:30
+────────────────────────────────────────────────────────────
+tag @s add mobstats.ignore
+execute if entity @s[type=#conures:mobstats/can_edit_stat/attack_damage] run function conures:mobstats/macro/roll_stat_init {Stat:"attack_damage"}
+execute if entity @s[type=#conures:mobstats/can_edit_stat/jump_strength] run function conures:mobstats/macro/roll_stat_init {Stat:"jump_strength"}
+execute if entity @s[type=#conures:mobstats/can_edit_stat/max_health] run function conures:mobstats/macro/roll_stat_init {Stat:"max_health"}
+execute if entity @s[type=#conures:mobstats/can_edit_stat/max_health] run data modify entity @s Health set value 1000000f
+execute if entity @s[type=#conures:mobstats/can_edit_stat/movement_speed] run function conures:mobstats/macro/roll_stat_init {Stat:"movement_speed"}
+execute if entity @s[type=#conures:mobstats/can_edit_stat/scale] run function conures:mobstats/macro/roll_stat_init {Stat:"scale"}
+data remove storage conures:mobstats Macro
+================================================================================
+
+📂 ARQUIVO: data/conures/function/mobstats/tick.1s.mcfunction
+📏 Tamanho: 165 Bytes
+📅 Data: 12/08/2024, 05:16:16
+────────────────────────────────────────────────────────────
+schedule function conures:mobstats/tick.1s 1s
+execute as @e[type=#conures:mobstats/affected_mobs,tag=!mobstats.ignore] at @s run function conures:mobstats/set_stats
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/affected_mobs.json
+📏 Tamanho: 261 Bytes
+📅 Data: 11/08/2024, 14:33:12
+────────────────────────────────────────────────────────────
+{ "values": [
+	"#conures:mobstats/can_edit_stat/attack_damage",
+	"#conures:mobstats/can_edit_stat/jump_strength",
+	"#conures:mobstats/can_edit_stat/max_health",
+	"#conures:mobstats/can_edit_stat/movement_speed",
+	"#conures:mobstats/can_edit_stat/scale"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/can_edit_stat/attack_damage.json
+📏 Tamanho: 87 Bytes
+📅 Data: 11/08/2024, 14:05:32
+────────────────────────────────────────────────────────────
+{ "values": [
+	"#conures:mobstats/melee_land",
+	"#conures:mobstats/melee_nonland"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/can_edit_stat/jump_strength.json
+📏 Tamanho: 87 Bytes
+📅 Data: 11/08/2024, 14:05:54
+────────────────────────────────────────────────────────────
+{ "values": [
+	"#conures:mobstats/melee_land",
+	"#conures:mobstats/nonmelee_land"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/can_edit_stat/max_health.json
+📏 Tamanho: 164 Bytes
+📅 Data: 11/08/2024, 14:06:34
+────────────────────────────────────────────────────────────
+{ "values": [
+	"#conures:mobstats/melee_land",
+	"#conures:mobstats/melee_nonland",
+	"#conures:mobstats/nonmelee_land",
+	"#conures:mobstats/nonmelee_nonland"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/can_edit_stat/movement_speed.json
+📏 Tamanho: 87 Bytes
+📅 Data: 11/08/2024, 14:06:06
+────────────────────────────────────────────────────────────
+{ "values": [
+	"#conures:mobstats/melee_land",
+	"#conures:mobstats/nonmelee_land"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/can_edit_stat/scale.json
+📏 Tamanho: 164 Bytes
+📅 Data: 11/08/2024, 14:06:20
+────────────────────────────────────────────────────────────
+{ "values": [
+	"#conures:mobstats/melee_land",
+	"#conures:mobstats/melee_nonland",
+	"#conures:mobstats/nonmelee_land",
+	"#conures:mobstats/nonmelee_nonland"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/melee_land.json
+📏 Tamanho: 538 Bytes
+📅 Data: 11/08/2024, 14:26:46
+────────────────────────────────────────────────────────────
+{ "values": [
+	"minecraft:goat",
+	"minecraft:iron_golem",
+	"minecraft:panda",
+	"minecraft:piglin",
+	"minecraft:polar_bear",
+	"minecraft:spider",
+	"minecraft:cave_spider",
+	"minecraft:wolf",
+	"minecraft:zombified_piglin",
+	"minecraft:blaze",
+	"minecraft:bogged",
+	"minecraft:breeze",
+	"minecraft:endermite",
+	"minecraft:hoglin",
+	"minecraft:husk",
+	"minecraft:piglin_brute",
+	"minecraft:silverfish",
+	"minecraft:skeleton",
+	"minecraft:stray",
+	"minecraft:wither_skeleton",
+	"minecraft:zoglin",
+	"minecraft:zombie"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/melee_nonland.json
+📏 Tamanho: 105 Bytes
+📅 Data: 11/08/2024, 14:25:28
+────────────────────────────────────────────────────────────
+{ "values": [
+	"minecraft:bee",
+	"minecraft:dolphin",
+	"minecraft:guardian",
+	"minecraft:phantom"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/nonmelee_land.json
+📏 Tamanho: 300 Bytes
+📅 Data: 11/08/2024, 14:24:26
+────────────────────────────────────────────────────────────
+{ "values": [
+	"minecraft:armadillo",
+	"minecraft:cat",
+	"minecraft:chicken",
+	"minecraft:cow",
+	"minecraft:frog",
+	"minecraft:mooshroom",
+	"minecraft:ocelot",
+	"minecraft:pig",
+	"minecraft:rabbit",
+	"minecraft:sheep",
+	"minecraft:sniffer",
+	"minecraft:strider",
+	"minecraft:creeper"
+]}
+================================================================================
+
+📂 ARQUIVO: data/conures/tags/entity_type/mobstats/nonmelee_nonland.json
+📏 Tamanho: 287 Bytes
+📅 Data: 11/08/2024, 14:24:58
+────────────────────────────────────────────────────────────
+{ "values": [
+	"minecraft:allay",
+	"minecraft:axolotl",
+	"minecraft:bat",
+	"minecraft:cod",
+	"minecraft:glow_squid",
+	"minecraft:parrot",
+	"minecraft:pufferfish",
+	"minecraft:salmon",
+	"minecraft:squid",
+	"minecraft:tropical_fish",
+	"minecraft:turtle",
+	"minecraft:ghast"
+]}
+================================================================================
+
+📂 ARQUIVO: data/minecraft/tags/function/load.json
+📏 Tamanho: 43 Bytes
+📅 Data: 11/08/2024, 07:26:14
+────────────────────────────────────────────────────────────
+{ "values": [
+	"conures:mobstats/load"
+]}
+================================================================================
+
+📂 ARQUIVO: pack.mcmeta
+📏 Tamanho: 126 Bytes
+📅 Data: 17/06/2025, 08:21:38
+────────────────────────────────────────────────────────────
+{ "pack": {
+	"description": "Mobs Spawn with Randomly Tweaked Stats",
+	"pack_format": 80,
+	"supported_formats": [57,80]
+}}
+================================================================================
+
+📊 ESTATÍSTICAS DO ARQUIVO
+────────────────────────────────────────────────────────────────────────────────
+Total de arquivos: 18
+Arquivos extraídos: 18
+Funções (.mcfunction): 6
+Arquivos JSON: 11
+Configurações: 0
+Tamanho total: 5.32 KB
+
+
+
+========================================================================================================================
+🎯 RESUMO DA EXTRAÇÃO MINECRAFT
+========================================================================================================================
+
+📦 Arquivos processados: 1
+📄 Arquivos encontrados: 18
+📝 Arquivos extraídos: 18
+⚙️ Arquivos .jar abertos: 0
+⚡ Funções (.mcfunction): 6
+📊 Arquivos JSON: 11
+🔧 Configurações: 0
+💾 Tamanho total: 5.32 KB
+🕐 Data: 21/02/2026, 17:05:04
